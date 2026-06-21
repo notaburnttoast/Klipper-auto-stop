@@ -7,6 +7,7 @@ import os
 import matplotlib.pyplot as plt
 import math
 from PIL import Image
+from PIL import ImageDraw
 from torch.utils.data import Dataset
 from torch.utils.data import DataLoader
 import torchvision.transforms.functional as F
@@ -98,11 +99,20 @@ class CustomDataset(Dataset):
         boxes[:, 0] += boxes[:, 2]/2
         boxes[:, 1] += boxes[:, 3]/2
         i = 0
-        for box in boxes:
+        for i, box in enumerate(boxes):
             classes = torch.zeros(6, dtype=torch.float32)
             classes[labels[i]] = 1
-            grid[math.floor(min(int(box[1]*grid_size), grid_size-1)), math.floor(min(int(box[0]*grid_size), grid_size-1)), :] =  torch.cat([box, torch.tensor([1.0]), classes], dim= 0)
-            i += 1
+            cx = box[0]
+            cy = box[1]
+            w = math.sqrt(box[2])
+            h = math.sqrt(box[3])
+            cell_x = min(int(cx * grid_size), grid_size-1)
+            cell_y = min(int(cy * grid_size), grid_size-1)
+            offset_x = cx * grid_size - cell_x
+            offset_y = cy * grid_size - cell_y
+            if grid[cell_y, cell_x, 4] == 1.0:
+                print("colison")
+            grid[cell_y, cell_x, :] =  torch.cat([torch.tensor([offset_x, offset_y, w, h, 1.0], dtype=torch.float32), classes], dim= 0)
 
 
         transform = transforms.Compose([
@@ -115,15 +125,61 @@ class CustomDataset(Dataset):
         return image, grid
 
 
+def get_boxes(grid, size=16):
+    boxes = []
+    for y in range(size):
+        for x in range(size):
+            cell = grid[y,x]
+            if cell[4] < 0.5:
+                continue
+            boxes.append(((cell[0].item()+x)/16, (cell[1].item()+y)/16, cell[2].item(), cell[3].item(), cell[4].item(), torch.argmax(cell[5:]).item()))
+    return boxes
+
+type_to_string = {0: "blobs", 1: "cracks", 2: "over_extrusion", 3: "spaghetti", 4: "stringing", 5: "under_extrusion"}
+
+def draw_boxes(tensor_image, boxes):
+    pltimage = transforms.ToPILImage()(tensor_image)
+    draw = ImageDraw.Draw(pltimage)
+    w, h = pltimage.size
+    for Cx, Cy, W, H, c, type in boxes:
+        x1 = (Cx - W/2) * w
+        y1 = (Cy - H/2) * h
+
+        x2 = (Cx + W/2) * w
+        y2 = (Cy + H/2) * h
+        draw.rectangle(
+            [x1, y1, x2, y2],
+            outline="red",
+            width=2
+        )
+        draw.text((x1, y1), f"type: {type_to_string[type]} probability: {c}")
+    pltimage.show()
+
+
+
 with open(r"datasetpath.txt", "r", encoding="utf-8") as file:
     data = file.read()
 
 DATA_PATH = data
 blob_dataset = CustomDataset(DATA_PATH, only_label=0)
-dataset = CustomDataset(DATA_PATH, only_label=None)\
+dataset = CustomDataset(DATA_PATH, only_label=None)
 
-image, grid = dataset[1]
-y, x = torch.nonzero(grid[:, :, 4])[0]
-print(grid[y, x])
-y, x = torch.nonzero(grid[:, :, 4])[1]
-print(grid[y, x])
+loader = DataLoader(
+    dataset,
+    shuffle=True,
+    batch_size=32,
+    num_workers=4,
+    pin_memory=True,
+    drop_last=False
+)
+
+
+
+
+
+#model.train()
+
+# for epoch in range(1):
+#     for indx, (image, target) in enumerate(loader):
+#         output = model(image)
+#         draw_boxes(image, get_boxes(output, 16))
