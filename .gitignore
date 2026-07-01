@@ -181,3 +181,4 @@ cython_debug/
 .cursorindexingignore
 datasetpath.txt
 .vscode/settings.json
+*.bat
