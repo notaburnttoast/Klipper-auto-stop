@@ -34,16 +34,15 @@ class CustomDataset(Dataset):
         self.only_label = only_label
         with open(r"yolo dataset/missed images.txt", "r", encoding="utf-8") as file:
             data = eval(file.read())
-        self.data = data
+        self.length, self.missing = data
     def __len__(self):
-        return self.data[0]
+        return self.length
     
     def __getitem__(self, inx):
-        if inx not in self.data[1]:
-            image = torch.load(f"yolo dataset/image {inx}.pt")
-            grid = torch.load(f"yolo dataset/grid {inx}.pt")
-        else:
-            return self.__getitem__((inx + 1) % len(self))
+        while inx in self.missing:
+            inx = (inx + 1) % self.length
+        image = torch.load(f"yolo dataset/image {inx}.pt")
+        grid = torch.load(f"yolo dataset/grid {inx}.pt")
         return image, grid
 
 
@@ -77,79 +76,76 @@ def draw_boxes(tensor_image, boxes):
         draw.text((x1, y1), f"type: {type_to_string[type]} probability: {c}")
     pltimage.show()
 
-
-
-with open(r"datasetpath.txt", "r", encoding="utf-8") as file:
-    data = file.read()
-
-DATA_PATH = data
-blob_dataset = CustomDataset(DATA_PATH, only_label=0)
-dataset = CustomDataset(DATA_PATH, only_label=None)
-
-
-
 class Model(nn.Module):
     def __init__(self):
         super().__init__()
         self.features = nn.Sequential(
-            nn.Conv2d(3, 32, 3, padding=1),
+            nn.Conv2d(3, 64, 3, padding=1),
             nn.ReLU(),
-            nn.MaxPool2d(2),   # 416 208
+            nn.MaxPool2d(2), #416 208
 
-            nn.Conv2d(32, 64, 3, padding=1),
+            nn.Conv2d(64, 128, 3, padding=1),
             nn.ReLU(),
-            nn.MaxPool2d(2),   # 208 104
+            nn.MaxPool2d(2), #208 104
 
-            nn.Conv2d(64, 64, 3, padding=1),
+            nn.Conv2d(128, 128, 3, padding=1),
             nn.ReLU(),
-            nn.MaxPool2d(2),   # 104 52
-
-            nn.Conv2d(64, 64, 3, padding=1),
-            nn.ReLU(),
-            nn.MaxPool2d(2),   # 52 26
-
-            nn.Conv2d(64, 64, 3, padding=1),
-            nn.ReLU(),
-            nn.MaxPool2d(2),   # 26 13
+            nn.MaxPool2d(2), #104 52
         )
-        self.head = nn.Conv2d(64, 11, kernel_size=1)
+        self.l1=nn.Conv2d(128, 11, 1)
 
     def forward(self, x):
         x = self.features(x)
-        x = self.head(x)
+        x = self.l1(x)
         x = torch.nn.functional.interpolate(
             x, size=(16, 16), mode="bilinear", align_corners=False
         )
 
         x = x.permute(0, 2, 3, 1)  # (B, 16, 16, 11)
         return x
-loader = DataLoader(
-    dataset,
-    shuffle=True,
-    batch_size=32,
-    num_workers=0,
-    # pin_memory=True,
-    # drop_last=False
-)
 
-model = Model()
+def main():
+    with open(r"datasetpath.txt", "r", encoding="utf-8") as file:
+        data = file.read()
 
-optimizer = torch.optim.Adam(
-    model.parameters(),
-    lr=0.001
-)
+    DATA_PATH = data
+    # blob_dataset = CustomDataset(DATA_PATH, only_label=0)
+    dataset = CustomDataset(DATA_PATH, only_label=None)
 
-criterion = torch.nn.MSELoss()
 
-model.train()
+    loader = DataLoader(
+        dataset,
+        batch_size=32,
+        shuffle=True,
+        num_workers=4,
+        pin_memory=True,
+        persistent_workers=True,
+        prefetch_factor=2
+    )
 
-for epoch in range(10):
-    cstep = 0
-    for image, target in loader:
-        output = model(image)
-        loss = criterion(output, target)
-        optimizer.zero_grad()
-        loss.backward()
-        optimizer.step
-        cstep += 1
-        print(f"epoch: {epoch}, percent: {100*((cstep*32)/5794)} loss: {loss.item()}")
+    model = Model().to(device)
+
+    optimizer = torch.optim.Adam(
+        model.parameters(),
+        lr= 0.0005
+    )
+
+    criterion = torch.nn.MSELoss()
+
+    model.train()
+
+    for epoch in range(10):
+        cstep = 0
+        for images, targets in loader:
+            images = images.to(device, non_blocking=True)
+            targets = targets.to(device, non_blocking=True)
+            output = model(images)
+            loss = criterion(output, targets)
+            optimizer.zero_grad()
+            loss.backward()
+            optimizer.step
+            cstep += 1
+            print(f"epoch: {epoch}, percent: {100*((cstep*32)/5794)} loss: {loss.item()}")
+
+if __name__ == "__main__":
+    main()
