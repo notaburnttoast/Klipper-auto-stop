@@ -182,3 +182,4 @@ cython_debug/
 datasetpath.txt
 .vscode/settings.json
 *.bat
+/yolo dataset/
