@@ -51,9 +51,15 @@ def get_boxes(grid, size=16):
     for y in range(size):
         for x in range(size):
             cell = grid[y,x]
-            if cell[4] < 0.5:
-                continue
-            boxes.append(((cell[0].item()+x)/16, (cell[1].item()+y)/16, cell[2].item(), cell[3].item(), cell[4].item(), torch.argmax(cell[5:]).item()))
+            if not cell[4] < 0.5:
+                box1 = (cell[0].item()+x)/16, (cell[1].item()+y)/16, cell[2].item(), cell[3].item(), cell[4].item()
+            else: 
+                box1 = (0,0,0,0,0)
+            if not cell[9] < 0.5:
+                box2 = (cell[5].item()+x)/16, (cell[6].item()+y)/16, cell[7].item(), cell[8].item(), cell[9].item()
+            else:
+                box2 = (0,0,0,0,0)
+            boxes.append((box1, box2, torch.argmax(cell[5:]).item()))
     return boxes
 
 type_to_string = {0: "blobs", 1: "cracks", 2: "over_extrusion", 3: "spaghetti", 4: "stringing", 5: "under_extrusion"}
@@ -62,18 +68,33 @@ def draw_boxes(tensor_image, boxes):
     pltimage = transforms.ToPILImage()(tensor_image)
     draw = ImageDraw.Draw(pltimage)
     w, h = pltimage.size
-    for Cx, Cy, W, H, c, type in boxes:
-        x1 = (Cx - W/2) * w
-        y1 = (Cy - H/2) * h
+    for Cx, Cy, W, H, c, Cx2, Cy2, W2, H2, c2, type in boxes:
+        if W != 0 and H != 0:
+            x1 = (Cx - W/2) * w
+            y1 = (Cy - H/2) * h
 
-        x2 = (Cx + W/2) * w
-        y2 = (Cy + H/2) * h
-        draw.rectangle(
-            [x1, y1, x2, y2],
-            outline="red",
-            width=2
-        )
-        draw.text((x1, y1), f"type: {type_to_string[type]} probability: {c}")
+            x2 = (Cx + W/2) * w
+            y2 = (Cy + H/2) * h
+            
+            draw.rectangle(
+                [x1, y1, x2, y2],
+                outline="red",
+                width=2
+            )
+            draw.text((x1, y1), f"type: {type_to_string[type]} probability: {c}")
+        if W2 != 0 and H2 != 0:
+            x3 = (Cx2 - W2/2) * w
+            y3 = (Cy2 - H2/2) * h
+
+            x4 = (Cx2 + W2/2) * w
+            y4 = (Cy2 + H2/2) * h
+
+            draw.rectangle(
+                [x3, y3, x4, y4],
+                outline="red",
+                width=2
+            )
+            draw.text((x3, y3), f"type: {type_to_string[type]} probability: {c2}")
     pltimage.show()
 
 class Model(nn.Module):
@@ -92,7 +113,7 @@ class Model(nn.Module):
             nn.ReLU(),
             nn.MaxPool2d(2), #104 52
         )
-        self.l1=nn.Conv2d(128, 11, 1)
+        self.l1=nn.Conv2d(128, 16, 1)
 
     def forward(self, x):
         x = self.features(x)
@@ -101,7 +122,7 @@ class Model(nn.Module):
             x, size=(16, 16), mode="bilinear", align_corners=False
         )
 
-        x = x.permute(0, 2, 3, 1)  # (B, 16, 16, 11)
+        x = x.permute(0, 2, 3, 1)  # (B, 16, 16, 16 type)
         return x
 
 def main():

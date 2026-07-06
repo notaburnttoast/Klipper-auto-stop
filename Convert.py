@@ -67,7 +67,7 @@ def run(root):
 
         grid_size = 16
 
-        grid = torch.zeros(grid_size, grid_size, 11) # shape + 6 types + trustablility (4 + 6 + 1)
+        grid = torch.zeros(grid_size, grid_size, 16) # shape + 6 types + trustablility (4 + 6 + 1)
 
         boxes[:, 0] /= 416 # normalize
         boxes[:, 1] /= 416
@@ -87,8 +87,12 @@ def run(root):
             cell_y = min(int(cy * grid_size), grid_size-1)
             offset_x = cx * grid_size - cell_x
             offset_y = cy * grid_size - cell_y
-            grid[cell_y, cell_x, :] =  torch.cat([torch.tensor([offset_x, offset_y, w, h, 1.0], dtype=torch.float32), classes], dim= 0)
-
+            if grid[cell_y, cell_x, 4] == 0:
+                grid[cell_y, cell_x, :] =  torch.cat([torch.tensor([offset_x, offset_y, w, h, 1.0], dtype=torch.float32), torch.zeros(5, dtype=torch.float32), classes], dim= 0)
+            elif grid[cell_y, cell_x, 9] == 0:
+                grid[cell_y, cell_x, :] =  torch.cat([grid[cell_y, cell_x, :5], torch.tensor([offset_x, offset_y, w, h, 1.0], dtype=torch.float32), classes], dim= 0)
+            else:
+                print("2+")
         transform = transforms.Compose([
             transforms.Resize((416, 416)),
             transforms.ToTensor()
