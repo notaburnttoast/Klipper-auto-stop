@@ -11,6 +11,7 @@ from PIL import ImageDraw
 from torch.utils.data import Dataset
 from torch.utils.data import DataLoader
 import torchvision.transforms.functional as F
+import torch.nn.functional as Fn
 from torchvision import transforms
 import random
 import keyboard
@@ -110,8 +111,8 @@ class CustomDataset(Dataset):
             cell_y = min(int(cy * grid_size), grid_size-1)
             offset_x = cx * grid_size - cell_x
             offset_y = cy * grid_size - cell_y
-            if grid[cell_y, cell_x, 4] == 1.0:
-                print("colison")
+            # if grid[cell_y, cell_x, 4] == 1.0:
+            #     print("colison")
             grid[cell_y, cell_x, :] =  torch.cat([torch.tensor([offset_x, offset_y, w, h, 1.0], dtype=torch.float32), classes], dim= 0)
 
 
@@ -164,22 +165,70 @@ DATA_PATH = data
 blob_dataset = CustomDataset(DATA_PATH, only_label=0)
 dataset = CustomDataset(DATA_PATH, only_label=None)
 
+
+
+class Model(nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.features = nn.Sequential(
+            nn.Conv2d(3, 32, 3, padding=1),
+            nn.ReLU(),
+            nn.MaxPool2d(2),   # 416 208
+
+            nn.Conv2d(32, 64, 3, padding=1),
+            nn.ReLU(),
+            nn.MaxPool2d(2),   # 208 104
+
+            nn.Conv2d(64, 64, 3, padding=1),
+            nn.ReLU(),
+            nn.MaxPool2d(2),   # 104 52
+
+            nn.Conv2d(64, 64, 3, padding=1),
+            nn.ReLU(),
+            nn.MaxPool2d(2),   # 52 26
+
+            nn.Conv2d(64, 64, 3, padding=1),
+            nn.ReLU(),
+            nn.MaxPool2d(2),   # 26 13
+        )
+        self.head = nn.Conv2d(64, 11, kernel_size=1)
+
+    def forward(self, x):
+        x = self.features(x)
+        x = self.head(x)
+        x = torch.nn.functional.interpolate(
+            x, size=(16, 16), mode="bilinear", align_corners=False
+        )
+
+        x = x.permute(0, 2, 3, 1)  # (B, 16, 16, 11)
+        return x
 loader = DataLoader(
     dataset,
     shuffle=True,
     batch_size=32,
-    num_workers=4,
-    pin_memory=True,
-    drop_last=False
+    num_workers=0,
+    # pin_memory=True,
+    # drop_last=False
 )
 
+model = Model()
 
+optimizer = torch.optim.Adam(
+    model.parameters(),
+    lr=0.001
+)
 
+criterion = torch.nn.MSELoss()
 
+model.train()
 
-#model.train()
-
-# for epoch in range(1):
-#     for indx, (image, target) in enumerate(loader):
-#         output = model(image)
-#         draw_boxes(image, get_boxes(output, 16))
+for epoch in range(10):
+    cstep = 0
+    for image, target in loader:
+        output = model(image)
+        loss = criterion(output, target)
+        optimizer.zero_grad()
+        loss.backward()
+        optimizer.step
+        cstep += 1
+        print(f"epoch: {epoch}, percent: {100*((cstep*32)/5794)} loss: {loss.item()}")
