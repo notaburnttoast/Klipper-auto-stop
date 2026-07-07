@@ -1,6 +1,5 @@
 import torch
 import torch.nn as nn
-import torch.optim as optim
 import matplotlib.pyplot as plt
 from matplotlib.patches import Rectangle
 from torch.utils.data import Dataset
@@ -8,10 +7,6 @@ from torch.utils.data import DataLoader
 import torchvision.transforms.functional as F
 import torch.nn.functional as Fn
 from torchvision import transforms
-import random
-import keyboard
-import time
-import threading
 import math
 import numpy as np
 
@@ -66,7 +61,7 @@ def get_boxes(grids, images, cutoff, size=16):
 
 type_to_string = {0: "blobs", 1: "cracks", 2: "over_extrusion", 3: "spaghetti", 4: "stringing", 5: "under_extrusion"}
 
-def draw_boxes(grid, id):
+def draw_boxes(grid, id, text):
     width = math.ceil(math.sqrt(len(grid)))
     height = math.ceil(len(grid) / width)
     fig, axs = plt.subplots(height, width)
@@ -93,8 +88,9 @@ def draw_boxes(grid, id):
         if x == width:
             x = 0
             y += 1
-    fig.suptitle('Perdictions')
-    plt.savefig(f"perdictions/perdiction {id}.png")
+    fig.suptitle(f'Prediction {text}')
+    plt.savefig(f"prediction/prediction {id}.png")
+    plt.close()
 
 
 class Model(nn.Module):
@@ -151,7 +147,7 @@ def main():
         lr= 0.0005
     )
 
-    criterion = torch.nn.MSELoss()
+    BCE = torch.nn.BCEWithLogitsLoss()
 
     model.train()
     sample_batch = None
@@ -161,19 +157,38 @@ def main():
             images = images.to(device, non_blocking=True)
             targets = targets.to(device, non_blocking=True)
             output = model(images)
-            loss = criterion(output, targets)
+            boxloss = 0
+            noobj_loss = 0
+            if output[..., :4] == 1:
+                boxloss +=  Fn.mse_loss(output[..., :2], targets[..., :2])
+                boxloss +=  Fn.mse_loss(output[..., 2:4], targets[..., 2:4])
+            else:
+                noobj_loss += BCE(output[..., :2], torch.zeros(2))
+                noobj_loss += BCE(output[..., 2:4], torch.zeros(2))
+            if output[..., :5] == 1:
+                boxloss +=  Fn.mse_loss(output[..., 5:7], targets[..., 5:7])
+                boxloss +=  Fn.mse_loss(output[..., 7:9], targets[..., 7:9])
+            else:
+                noobj_loss += BCE(output[..., 5:7], torch.zeros(2))
+                noobj_loss += BCE(output[..., 7:9], torch.zeros(2))
+            objloss = Fn.binary_cross_entropy_with_logits(output[..., 4], targets[..., 4])
+            objloss += Fn.binary_cross_entropy_with_logits(output[..., 9], targets[..., 9])
+            class_loss = Fn.cross_entropy(torch.argmax(output[..., 10:16]), torch.argmax(targets[..., 10:16]))
+            loss = 5*boxloss+objloss+0.2*noobj_loss+class_loss
             optimizer.zero_grad()
             loss.backward()
             optimizer.step()
             cstep += 1
+            
+            
             if sample_batch is None:
                 sample_batch = (images.detach().cpu(), output.detach().cpu())
             print(f"epoch: {epoch+1}, percent: {100*((cstep*25)/5794)}, loss: {loss.item()}")
             if sample_batch is not None and cstep % 100 == 0:
-                draw_boxes(get_boxes(sample_batch[1], sample_batch[0], cutoff=0.0), f"step {cstep}")
+                draw_boxes(get_boxes(sample_batch[1], sample_batch[0], cutoff=0.0), f"step {cstep}", text="cut off = 0.0")
                 sample_batch = None
         if sample_batch is not None:
-            draw_boxes(get_boxes(sample_batch[1], sample_batch[0], cutoff=0.2), f"epoch {epoch+1}")
+            draw_boxes(get_boxes(sample_batch[1], sample_batch[0], cutoff=0.2), f"epoch {epoch+1}", text="cut off = 0.2")
             sample_batch = None
 
 if __name__ == "__main__":
