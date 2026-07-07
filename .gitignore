@@ -183,3 +183,4 @@ datasetpath.txt
 .vscode/settings.json
 *.bat
 /yolo dataset/
+/perdictions/

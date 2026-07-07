@@ -3,7 +3,6 @@ import json
 import os
 import math
 from PIL import Image
-from torch.utils.data import Dataset
 from torchvision import transforms
 
 if torch.cuda.is_available():
@@ -69,20 +68,21 @@ def run(root):
 
         grid = torch.zeros(grid_size, grid_size, 16) # shape + 6 types + trustablility (4 + 6 + 1)
 
-        boxes[:, 0] /= 416 # normalize
+        boxes[:, 0] /= 416 # normalize to [0, 1]
         boxes[:, 1] /= 416
         boxes[:, 2] /= 416
         boxes[:, 3] /= 416
-        boxes[:, 0] += boxes[:, 2]/2
-        boxes[:, 1] += boxes[:, 3]/2
+        boxes[:, 0] += boxes[:, 2] / 2
+        boxes[:, 1] += boxes[:, 3] / 2
+
         i = 0
         for i, box in enumerate(boxes):
             classes = torch.zeros(6, dtype=torch.float32)
             classes[labels[i]] = 1
             cx = box[0]
             cy = box[1]
-            w = math.sqrt(box[2])
-            h = math.sqrt(box[3])
+            w = box[2]
+            h = box[3]
             cell_x = min(int(cx * grid_size), grid_size-1)
             cell_y = min(int(cy * grid_size), grid_size-1)
             offset_x = cx * grid_size - cell_x

@@ -1,13 +1,8 @@
 import torch
-import json
-import torchvision
 import torch.nn as nn
 import torch.optim as optim
-import os
 import matplotlib.pyplot as plt
-import math
-from PIL import Image
-from PIL import ImageDraw
+from matplotlib.patches import Rectangle
 from torch.utils.data import Dataset
 from torch.utils.data import DataLoader
 import torchvision.transforms.functional as F
@@ -17,6 +12,8 @@ import random
 import keyboard
 import time
 import threading
+import math
+import numpy as np
 
 if torch.cuda.is_available():
     print(f"{torch.cuda.get_device_name(0)} is available")
@@ -46,56 +43,59 @@ class CustomDataset(Dataset):
         return image, grid
 
 
-def get_boxes(grid, size=16):
-    boxes = []
-    for y in range(size):
-        for x in range(size):
-            cell = grid[y,x]
-            if not cell[4] < 0.5:
-                box1 = (cell[0].item()+x)/16, (cell[1].item()+y)/16, cell[2].item(), cell[3].item(), cell[4].item()
-            else: 
-                box1 = (0,0,0,0,0)
-            if not cell[9] < 0.5:
-                box2 = (cell[5].item()+x)/16, (cell[6].item()+y)/16, cell[7].item(), cell[8].item(), cell[9].item()
-            else:
-                box2 = (0,0,0,0,0)
-            boxes.append((box1, box2, torch.argmax(cell[5:]).item()))
-    return boxes
+def get_boxes(grids, images, cutoff, size=16):
+    imageboxes = []
+    current = 0
+    for grid in grids:
+        boxes = [images[current]]
+        for y in range(size):
+            for x in range(size):
+                cell = grid[y,x]
+                if not cell[4] < cutoff:
+                    box1 = (cell[0].item()+x)/16, (cell[1].item()+y)/16, cell[2].item(), cell[3].item(), cell[4].item()
+                else: 
+                    box1 = (0,0,0,0,0)
+                if not cell[9] < cutoff:
+                    box2 = (cell[5].item()+x)/16, (cell[6].item()+y)/16, cell[7].item(), cell[8].item(), cell[9].item()
+                else:
+                    box2 = (0,0,0,0,0)
+                boxes.append((*box1, *box2, torch.argmax(cell[5:]).item()))
+        imageboxes.append(boxes)
+        current +=1
+    return imageboxes
 
 type_to_string = {0: "blobs", 1: "cracks", 2: "over_extrusion", 3: "spaghetti", 4: "stringing", 5: "under_extrusion"}
 
-def draw_boxes(tensor_image, boxes):
-    pltimage = transforms.ToPILImage()(tensor_image)
-    draw = ImageDraw.Draw(pltimage)
-    w, h = pltimage.size
-    for Cx, Cy, W, H, c, Cx2, Cy2, W2, H2, c2, type in boxes:
-        if W != 0 and H != 0:
-            x1 = (Cx - W/2) * w
-            y1 = (Cy - H/2) * h
+def draw_boxes(grid, id):
+    width = math.ceil(math.sqrt(len(grid)))
+    height = math.ceil(len(grid) / width)
+    fig, axs = plt.subplots(height, width)
+    axs = np.array(axs).reshape((height, width))
+    x = 0
+    y = 0
+    for boxes in grid:
+        pltimage = transforms.ToPILImage()(boxes[0])
+        boxes.pop(0)
+        axs[y][x].imshow(pltimage)
+        w, h = pltimage.size
+        for Cx, Cy, W, H, c, Cx2, Cy2, W2, H2, c2, type in boxes:
+            if W != 0 and H != 0:
+                x1 = (Cx - W/2) * w
+                y1 = (Cy - H/2) * h
+                axs[y][x].add_patch(Rectangle((x1, y1), W * w, H * h, linewidth=2, edgecolor='r', facecolor='none'))
+                #axs[y][x].text(x1, y1, f"type: {type_to_string[type]} probability: {c}", color='red', fontsize=6)
+            if W2 != 0 and H2 != 0:
+                x3 = (Cx2 - W2/2) * w
+                y3 = (Cy2 - H2/2) * h
+                axs[y][x].add_patch(Rectangle((x3, y3), W2 * w, H2 * h, linewidth=2, edgecolor='r', facecolor='none'))
+                #axs[y][x].text(x3, y3, f"type: {type_to_string[type]} probability: {c2}", color='red', fontsize=6)
+        x += 1 
+        if x == width:
+            x = 0
+            y += 1
+    fig.suptitle('Perdictions')
+    plt.savefig(f"perdictions/perdiction {id}.png")
 
-            x2 = (Cx + W/2) * w
-            y2 = (Cy + H/2) * h
-            
-            draw.rectangle(
-                [x1, y1, x2, y2],
-                outline="red",
-                width=2
-            )
-            draw.text((x1, y1), f"type: {type_to_string[type]} probability: {c}")
-        if W2 != 0 and H2 != 0:
-            x3 = (Cx2 - W2/2) * w
-            y3 = (Cy2 - H2/2) * h
-
-            x4 = (Cx2 + W2/2) * w
-            y4 = (Cy2 + H2/2) * h
-
-            draw.rectangle(
-                [x3, y3, x4, y4],
-                outline="red",
-                width=2
-            )
-            draw.text((x3, y3), f"type: {type_to_string[type]} probability: {c2}")
-    pltimage.show()
 
 class Model(nn.Module):
     def __init__(self):
@@ -136,7 +136,7 @@ def main():
 
     loader = DataLoader(
         dataset,
-        batch_size=32,
+        batch_size=25,
         shuffle=True,
         num_workers=4,
         pin_memory=True,
@@ -154,7 +154,7 @@ def main():
     criterion = torch.nn.MSELoss()
 
     model.train()
-
+    sample_batch = None
     for epoch in range(10):
         cstep = 0
         for images, targets in loader:
@@ -164,9 +164,17 @@ def main():
             loss = criterion(output, targets)
             optimizer.zero_grad()
             loss.backward()
-            optimizer.step
+            optimizer.step()
             cstep += 1
-            print(f"epoch: {epoch}, percent: {100*((cstep*32)/5794)} loss: {loss.item()}")
+            if sample_batch is None:
+                sample_batch = (images.detach().cpu(), output.detach().cpu())
+            print(f"epoch: {epoch+1}, percent: {100*((cstep*25)/5794)}, loss: {loss.item()}")
+            if sample_batch is not None and cstep % 100 == 0:
+                draw_boxes(get_boxes(sample_batch[1], sample_batch[0], cutoff=0.0), f"step {cstep}")
+                sample_batch = None
+        if sample_batch is not None:
+            draw_boxes(get_boxes(sample_batch[1], sample_batch[0], cutoff=0.2), f"epoch {epoch+1}")
+            sample_batch = None
 
 if __name__ == "__main__":
     main()
