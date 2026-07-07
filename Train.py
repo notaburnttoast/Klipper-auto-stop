@@ -147,8 +147,6 @@ def main():
         lr= 0.0005
     )
 
-    BCE = torch.nn.BCEWithLogitsLoss()
-
     model.train()
     sample_batch = None
     for epoch in range(10):
@@ -157,30 +155,32 @@ def main():
             images = images.to(device, non_blocking=True)
             targets = targets.to(device, non_blocking=True)
             output = model(images)
-            boxloss = 0
-            noobj_loss = 0
-            if output[..., :4] == 1:
-                boxloss +=  Fn.mse_loss(output[..., :2], targets[..., :2])
-                boxloss +=  Fn.mse_loss(output[..., 2:4], targets[..., 2:4])
-            else:
-                noobj_loss += BCE(output[..., :2], torch.zeros(2))
-                noobj_loss += BCE(output[..., 2:4], torch.zeros(2))
-            if output[..., :5] == 1:
-                boxloss +=  Fn.mse_loss(output[..., 5:7], targets[..., 5:7])
-                boxloss +=  Fn.mse_loss(output[..., 7:9], targets[..., 7:9])
-            else:
-                noobj_loss += BCE(output[..., 5:7], torch.zeros(2))
-                noobj_loss += BCE(output[..., 7:9], torch.zeros(2))
+            objects1 = targets[:,:,:, 4] == 1
+            noobjects1 = targets[:,:,:, 4] != 1
+            objects2 = targets[:,:,:, 9] == 1
+            noobjects2 = targets[:,:,:, 9] != 1
+            boxloss = torch.tensor([0], dtype=torch.float32).to(device, non_blocking=True)
+            noobj_loss = torch.tensor([0], dtype=torch.float32).to(device, non_blocking=True)
+            if objects1.any():
+                boxloss =  Fn.mse_loss(output[..., :2][objects1], targets[..., :2][objects1])
+                boxloss +=  Fn.mse_loss(output[..., 2:4][objects1], targets[..., 2:4][objects1])
+            if noobjects1.any():
+                noobj_loss = Fn.mse_loss(output[..., :2][noobjects1], torch.zeros_like(output[..., :2][noobjects1]))
+                noobj_loss += Fn.mse_loss(output[..., 2:4][noobjects1], torch.zeros_like(output[..., 2:4][noobjects1]))
+            if objects2.any():
+                boxloss =  Fn.mse_loss(output[..., 5:7][objects2], targets[..., 5:7][objects2])
+                boxloss +=  Fn.mse_loss(output[..., 7:9][objects2], targets[..., 7:9][objects2])
+            if noobjects2.any():
+                noobj_loss = Fn.mse_loss(output[..., 5:7][noobjects2], torch.zeros_like(output[..., 5:7][noobjects2]))
+                noobj_loss += Fn.mse_loss(output[..., 7:9][noobjects2], torch.zeros_like(output[..., 7:9][noobjects2]))
             objloss = Fn.binary_cross_entropy_with_logits(output[..., 4], targets[..., 4])
             objloss += Fn.binary_cross_entropy_with_logits(output[..., 9], targets[..., 9])
-            class_loss = Fn.cross_entropy(torch.argmax(output[..., 10:16]), torch.argmax(targets[..., 10:16]))
+            class_loss = Fn.cross_entropy(output[..., 10:16], targets[..., 10:16])
             loss = 5*boxloss+objloss+0.2*noobj_loss+class_loss
             optimizer.zero_grad()
             loss.backward()
             optimizer.step()
             cstep += 1
-            
-            
             if sample_batch is None:
                 sample_batch = (images.detach().cpu(), output.detach().cpu())
             print(f"epoch: {epoch+1}, percent: {100*((cstep*25)/5794)}, loss: {loss.item()}")
