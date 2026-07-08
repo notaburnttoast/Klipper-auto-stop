@@ -135,22 +135,19 @@ def draw_boxes(grid, id, text):
 
 
 class Model(nn.Module):
-    def __init__(self):
+    def __init__(self, layers=3, startchannels=32):
         super().__init__()
-        self.features = nn.Sequential(
-            nn.Conv2d(3, 64, 3, padding=1),
-            nn.ReLU(),
-            nn.MaxPool2d(2), #416 208
+        conv2layers = []
+        inchannels = 3
+        for i in range(layers):
+            outchannels = startchannels * (2**i)
+            conv2layers.append(nn.Conv2d(inchannels, outchannels, 3, padding=1))
+            conv2layers.append(nn.ReLU())
+            conv2layers.append(nn.MaxPool2d(2))
+            inchannels=outchannels
+        self.features = nn.Sequential(*conv2layers)
 
-            nn.Conv2d(64, 128, 3, padding=1),
-            nn.ReLU(),
-            nn.MaxPool2d(2), #208 104
-
-            nn.Conv2d(128, 128, 3, padding=1),
-            nn.ReLU(),
-            nn.MaxPool2d(2), #104 52
-        )
-        self.l1=nn.Conv2d(128, 16, 1)
+        self.l1=nn.Conv2d(inchannels, 16, 1)
 
     def forward(self, x):
         x = self.features(x)
@@ -173,15 +170,16 @@ def main():
 
     loader = DataLoader(
         dataset,
-        batch_size=25,
+        batch_size=49,
         shuffle=True,
         num_workers=4,
         pin_memory=True,
         persistent_workers=True,
-        prefetch_factor=2
+        prefetch_factor=2,
+        drop_last=True
     )
 
-    model = Model().to(device)
+    model = Model(layers=4).to(device)
 
     optimizer = torch.optim.Adam(
         model.parameters(),
@@ -190,7 +188,7 @@ def main():
 
     model.train()
     sample_batch = None
-    for epoch in range(10):
+    for epoch in range(20):
         cstep = 0
         for images, targets in loader:
             images = images.to(device, non_blocking=True)
@@ -223,12 +221,12 @@ def main():
             optimizer.step()
             cstep += 1
             sample_batch = (images.detach().cpu(), output.detach().cpu())
-            print(f"epoch: {epoch+1}, percent: {100*((cstep*25)/5794)}, loss: {loss.item()}")
+            print(f"epoch: {epoch}, percent: {100*((cstep*49)/5794)}, loss: {loss.item()}")
             if cstep % 100 == 0:
                 draw_boxes(get_boxes(sample_batch[1], sample_batch[0], cutoff=0.0), f"step {cstep}", text="cut off = 0.0")
                 sample_batch = None
         if sample_batch is not None:
-            draw_boxes(get_boxes(sample_batch[1], sample_batch[0], cutoff=0.02), f"epoch {epoch+1}", text="cut off = 0.02")
+            draw_boxes(get_boxes(sample_batch[1], sample_batch[0], cutoff=0.50), f"epoch {epoch+1}", text="cut off = 0.5")
             sample_batch = None
 
 if __name__ == "__main__":

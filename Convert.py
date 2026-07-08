@@ -1,7 +1,6 @@
 import torch
 import json
 import os
-import math
 from PIL import Image
 from torchvision import transforms
 
@@ -57,12 +56,6 @@ def run(root):
         if len(boxes) == 0:
             skipedfiles[1].append(image_id)
             continue
-        MAX_BOXES = 15
-
-        if len(boxes) > MAX_BOXES:
-            indices = torch.randperm(len(boxes))[:MAX_BOXES]
-            boxes = boxes[indices]
-            labels = labels[indices]
 
         grid_size = 16
 
@@ -76,6 +69,7 @@ def run(root):
         boxes[:, 1] += boxes[:, 3] / 2
 
         i = 0
+        numberofboxesremoved = 0
         for i, box in enumerate(boxes):
             classes = torch.zeros(6, dtype=torch.float32)
             classes[labels[i]] = 1
@@ -92,7 +86,8 @@ def run(root):
             elif grid[cell_y, cell_x, 9] == 0:
                 grid[cell_y, cell_x, :] =  torch.cat([grid[cell_y, cell_x, :5], torch.tensor([offset_x, offset_y, w, h, 1.0], dtype=torch.float32), classes], dim= 0)
             else:
-                print("2+")
+                numberofboxesremoved+=1
+                print(numberofboxesremoved)
         transform = transforms.Compose([
             transforms.Resize((416, 416)),
             transforms.ToTensor()
