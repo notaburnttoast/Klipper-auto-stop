@@ -44,10 +44,12 @@ def get_boxes(grids, images, cutoff, size=16):
     for grid in grids:
         boxes = [images[current]]
         box_count = 0
+        conf_values = []
         for y in range(size):
             for x in range(size):
                 cell = grid[y,x]
                 conf = 1 / (1 + np.exp(-cell[4].item()))
+                conf_values.append(conf)
                 if conf >= cutoff:
                     # Apply sigmoid to normalize all values to [0, 1]
                     cx = 1 / (1 + np.exp(-cell[0].item()))
@@ -73,8 +75,6 @@ def get_boxes(grids, images, cutoff, size=16):
                     box2 = (0,0,0,0,0)
                 boxes.append((*box1, *box2, torch.argmax(cell[10:]).item()))
         imageboxes.append(boxes)
-        if box_count > 0:
-            print(f"get_boxes: image {current} has {box_count} boxes")
         current +=1
     return imageboxes
 
@@ -84,39 +84,53 @@ def draw_boxes(grid, id, text):
     print(f"draw_boxes called with {len(grid)} images, id={id}, text={text}")
     width = math.ceil(math.sqrt(len(grid)))
     height = math.ceil(len(grid) / width)
+    print(f"Grid layout: {width}x{height} = {width*height} subplots for {len(grid)} images")
     fig, axs = plt.subplots(height, width, squeeze=False, figsize=(12, 12))
     axs = np.array(axs).reshape((height, width))
     x = 0
     y = 0
     box_count = 0
-    for boxes in grid:
+    for idx, boxes in enumerate(grid):
         pltimage = transforms.ToPILImage()(boxes[0])
         current = boxes[1:]
         axs[y][x].imshow(pltimage)
         axs[y][x].set_aspect('auto')
         w, h = pltimage.size
-        for Cx, Cy, W, H, c, Cx2, Cy2, W2, H2, c2, type in current:
+        image_box_count = 0
+        for box_idx, box_data in enumerate(current):
+            Cx, Cy, W, H, c, Cx2, Cy2, W2, H2, c2, type_id = box_data
             if W != 0 and H != 0:
                 x1 = (Cx - W/2) * w
                 y1 = (Cy - H/2) * h
                 rect = Rectangle((x1, y1), W * w, H * h, linewidth=2, edgecolor='r', facecolor='none')
                 axs[y][x].add_patch(rect)
-                #axs[y][x].text(x1, y1, f"type: {type_to_string[type]} probability: {c}", color='red', fontsize=6)
+                image_box_count += 1
+                box_count += 1
+                #axs[y][x].text(x1, y1, f"type: {type_to_string[type_id]} probability: {c}", color='red', fontsize=6)
             if W2 != 0 and H2 != 0:
                 x3 = (Cx2 - W2/2) * w
                 y3 = (Cy2 - H2/2) * h
                 rect2 = Rectangle((x3, y3), W2 * w, H2 * h, linewidth=2, edgecolor='b', facecolor='none')
                 axs[y][x].add_patch(rect2)
+                image_box_count += 1
                 box_count += 1
-                #axs[y][x].text(x3, y3, f"type: {type_to_string[type]} probability: {c2}", color='red', fontsize=6)
+                #axs[y][x].text(x3, y3, f"type: {type_to_string[type_id]} probability: {c2}", color='red', fontsize=6)
         axs[y][x].set_xlim(0, w)
         axs[y][x].set_ylim(h, 0)
         x += 1 
         if x == width:
             x = 0
             y += 1
+    # Hide any unused subplots
+    for i in range(len(grid), width * height):
+        ax_idx = i
+        y_idx = ax_idx // width
+        x_idx = ax_idx % width
+        axs[y_idx][x_idx].axis('off')
+    print(f"Total boxes drawn: {box_count}")
     fig.suptitle(f'Prediction {text}')
     plt.savefig(f"predictions/prediction {id}.png", dpi=100, bbox_inches='tight')
+    print(f"Saved: predictions/prediction {id}.png")
     plt.close()
 
 
@@ -190,16 +204,16 @@ def main():
             noobj_loss = torch.tensor([0], dtype=torch.float32).to(device, non_blocking=True)
             if objects1.any():
                 boxloss =  Fn.mse_loss(torch.sigmoid(output[..., :2][objects1]), targets[..., :2][objects1])
-                boxloss +=  Fn.mse_loss(torch.exp(output[..., 2:4][objects1]), targets[..., 2:4][objects1])
+                boxloss +=  Fn.mse_loss(torch.sigmoid(output[..., 2:4][objects1]), targets[..., 2:4][objects1])
             if noobjects1.any():
                 noobj_loss = Fn.mse_loss(torch.sigmoid(output[..., :2][noobjects1]), torch.zeros_like(output[..., :2][noobjects1]))
-                noobj_loss += Fn.mse_loss(torch.exp(output[..., 2:4][noobjects1]), torch.zeros_like(output[..., 2:4][noobjects1]))
+                noobj_loss += Fn.mse_loss(torch.sigmoid(output[..., 2:4][noobjects1]), torch.zeros_like(output[..., 2:4][noobjects1]))
             if objects2.any():
                 boxloss =  Fn.mse_loss(torch.sigmoid(output[..., 5:7][objects2]), targets[..., 5:7][objects2])
-                boxloss +=  Fn.mse_loss(torch.exp(output[..., 7:9][objects2]), targets[..., 7:9][objects2])
+                boxloss +=  Fn.mse_loss(torch.sigmoid(output[..., 7:9][objects2]), targets[..., 7:9][objects2])
             if noobjects2.any():
                 noobj_loss = Fn.mse_loss(torch.sigmoid(output[..., 5:7][noobjects2]), torch.zeros_like(output[..., 5:7][noobjects2]))
-                noobj_loss += Fn.mse_loss(torch.exp(output[..., 7:9][noobjects2]), torch.zeros_like(output[..., 7:9][noobjects2]))
+                noobj_loss += Fn.mse_loss(torch.sigmoid(output[..., 7:9][noobjects2]), torch.zeros_like(output[..., 7:9][noobjects2]))
             objloss = Fn.binary_cross_entropy_with_logits(output[..., 4], targets[..., 4])
             objloss += Fn.binary_cross_entropy_with_logits(output[..., 9], targets[..., 9])
             class_loss = Fn.cross_entropy(output[..., 10:16], targets[..., 10:16])
@@ -214,7 +228,7 @@ def main():
                 draw_boxes(get_boxes(sample_batch[1], sample_batch[0], cutoff=0.0), f"step {cstep}", text="cut off = 0.0")
                 sample_batch = None
         if sample_batch is not None:
-            draw_boxes(get_boxes(sample_batch[1], sample_batch[0], cutoff=0.2), f"epoch {epoch+1}", text="cut off = 0.2")
+            draw_boxes(get_boxes(sample_batch[1], sample_batch[0], cutoff=0.02), f"epoch {epoch+1}", text="cut off = 0.02")
             sample_batch = None
 
 if __name__ == "__main__":
