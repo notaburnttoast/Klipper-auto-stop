@@ -249,7 +249,7 @@ def main():
                     else:
                         torch.save(model.state_dict(), r"Model saves/Science fair/Model saves/" + f"L{layersize}" + r"/best.pt")
                 prevloss.append(loss.detach().cpu())
-                if len(prevloss) >= 0:
+                if len(prevloss) >= 10:
                     prevloss.pop(0)
                 if Testing:
                     torch.save(model.state_dict(), r"Model saves/testing/" + f"L{layersize} {info}" + r"/last.pt")
