@@ -219,7 +219,7 @@ def main():
                 noboxloss += Fn.mse_loss(torch.sigmoid(output[..., 7:9][noobjects2]), torch.zeros_like(output[..., 7:9][noobjects2]))
                 noboxnoobjectiveness += Fn.binary_cross_entropy_with_logits(output[..., 9][noobjects2], targets[..., 9][noobjects2])
             class_loss = Fn.cross_entropy(output[..., 10:16], targets[..., 10:16])
-            loss = 20*boxloss+0.02*noboxloss+1*boxobjectiveness+2*noboxnoobjectiveness+0.7*class_loss
+            loss = 10*boxloss+0.02*noboxloss+1*boxobjectiveness+2*noboxnoobjectiveness+0.7*class_loss
             optimizer.zero_grad()
             loss.backward()
             optimizer.step()
@@ -227,10 +227,10 @@ def main():
             sample_batch = (images.detach().cpu(), output.detach().cpu())
             print(f"epoch: {epoch}, percent: {100*((cstep*49)/5794)}, loss: {loss.item()}")
             if cstep % 55 == 0:
-                draw_boxes(get_boxes(sample_batch[1], sample_batch[0], cutoff=0.02), f"step {cstep}", text="cut off = 0.02")
+                draw_boxes(get_boxes(sample_batch[1], sample_batch[0], cutoff=0.2), f"step {cstep}", text="cut off = 0.2")
                 sample_batch = None
         if sample_batch is not None:
-            draw_boxes(get_boxes(sample_batch[1], sample_batch[0], cutoff=0.50), f"epoch {epoch+1}", text="cut off = 0.5")
+            draw_boxes(get_boxes(sample_batch[1], sample_batch[0], cutoff=0.70), f"epoch {epoch+1}", text="cut off = 0.7")
             sample_batch = None
 
 if __name__ == "__main__":
