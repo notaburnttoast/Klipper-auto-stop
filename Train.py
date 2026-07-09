@@ -4,11 +4,11 @@ import matplotlib.pyplot as plt
 from matplotlib.patches import Rectangle
 from torch.utils.data import Dataset
 from torch.utils.data import DataLoader
-import torchvision.transforms.functional as F
 import torch.nn.functional as Fn
 from torchvision import transforms
 import math
 import numpy as np
+from pathlib import Path
 
 if torch.cuda.is_available():
     print(f"{torch.cuda.get_device_name(0)} is available")
@@ -178,14 +178,36 @@ def main():
         prefetch_factor=2,
         drop_last=True
     )
-
-    model = Model(layers=4).to(device)
+    layersize = 4
+    model = Model(layers=layersize).to(device)
 
     optimizer = torch.optim.Adam(
         model.parameters(),
         lr= 0.0005
     )
 
+    Save_model = True
+    Testing = True
+    Log_data = False
+
+    Save_model_path = Path(r"Model saves/testing")
+    info = ""
+    epoch_data = []
+    loss_data = []
+    Save_log_path = ""
+    if Save_model:
+        if Log_data:
+            info = input("Log data iteration: ")
+            Save_log_path = r"Model saves/data log/" + f"L{layersize} + {info}"
+        if Testing:
+            info = input("Model info: ")
+            Save_model_path = Path(r"Model saves/testing/" + f"L{layersize} {info}")
+        else:
+            Save_model_path = Path(r"Model saves/Science fair/Model saves" + f"L{layersize}")
+
+        Save_model_path.mkdir(parents=False, exist_ok=True)
+
+    prevloss = []
     model.train()
     sample_batch = None
     for epoch in range(50):
@@ -220,6 +242,24 @@ def main():
                 noboxnoobjectiveness += Fn.binary_cross_entropy_with_logits(output[..., 9][noobjects2], targets[..., 9][noobjects2])
             class_loss = Fn.cross_entropy(output[..., 10:16], targets[..., 10:16])
             loss = 10*boxloss+0.02*noboxloss+1*boxobjectiveness+2*noboxnoobjectiveness+0.7*class_loss
+            if Save_model:
+                if min(prevloss) > loss:
+                    if Testing:
+                        torch.save(model.state_dict(), r"Model saves/testing/" + f"L{layersize} {info}" + r"/best.pt")
+                    else:
+                        torch.save(model.state_dict(), r"Model saves/Science fair/Model saves/" + f"L{layersize}" + r"/best.pt")
+                prevloss.append(loss.detach().cpu())
+                if len(prevloss) >= 0:
+                    prevloss.pop(0)
+                if Testing:
+                    torch.save(model.state_dict(), r"Model saves/testing/" + f"L{layersize} {info}" + r"/last.pt")
+                else:
+                    torch.save(model.state_dict(), r"Model saves/Science fair/Model saves/" + f"L{layersize}" + r"/last.pt")
+            epoch_data.append(epoch+((cstep*49)/5794))
+            loss_data.append(loss)
+            if Log_data:
+                with open(Save_log_path, "w") as file:
+                    file.write(str([epoch_data, loss_data]))
             optimizer.zero_grad()
             loss.backward()
             optimizer.step()
