@@ -27,6 +27,7 @@ def run(root):
         data[cimage_id]["labels"].append(item["category_id"]-1)
     image_ids = list(data.keys())
     skipedfiles = [len(image_ids),[]]
+    numberofboxesremoved = 0
     for image_id in image_ids:
         file_name = id_to_file[image_id]
         image_path = os.path.join(root, file_name)
@@ -57,7 +58,7 @@ def run(root):
             skipedfiles[1].append(image_id)
             continue
 
-        grid_size = 16
+        grid_size = 32
 
         grid = torch.zeros(grid_size, grid_size, 16) # shape + 6 types + trustablility (4 + 6 + 1)
 
@@ -69,7 +70,6 @@ def run(root):
         boxes[:, 1] += boxes[:, 3] / 2
 
         i = 0
-        numberofboxesremoved = 0
         for i, box in enumerate(boxes):
             classes = torch.zeros(6, dtype=torch.float32)
             classes[labels[i]] = 1

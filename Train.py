@@ -38,7 +38,7 @@ class CustomDataset(Dataset):
         return image, grid
 
 
-def get_boxes(grids, images, cutoff, size=16):
+def get_boxes(grids, images, cutoff, size=32):
     imageboxes = []
     current = 0
     for grid in grids:
@@ -57,7 +57,7 @@ def get_boxes(grids, images, cutoff, size=16):
                     w = 1 / (1 + np.exp(-cell[2].item()))
                     h = 1 / (1 + np.exp(-cell[3].item()))
                     conf = 1 / (1 + np.exp(-cell[4].item()))
-                    box1 = (cx + x) / 16, (cy + y) / 16, w, h, conf
+                    box1 = (cx + x) / 32, (cy + y) / 32, w, h, conf
                     box_count += 1
                 else: 
                     box1 = (0,0,0,0,0)
@@ -69,7 +69,7 @@ def get_boxes(grids, images, cutoff, size=16):
                     w2 = 1 / (1 + np.exp(-cell[7].item()))
                     h2 = 1 / (1 + np.exp(-cell[8].item()))
                     conf2 = 1 / (1 + np.exp(-cell[9].item()))
-                    box2 = (cx2 + x) / 16, (cy2 + y) / 16, w2, h2, conf2
+                    box2 = (cx2 + x) / 32, (cy2 + y) / 32, w2, h2, conf2
                     box_count += 1
                 else:
                     box2 = (0,0,0,0,0)
@@ -153,7 +153,7 @@ class Model(nn.Module):
         x = self.features(x)
         x = self.l1(x)
         x = torch.nn.functional.interpolate(
-            x, size=(16, 16), mode="bilinear", align_corners=False
+            x, size=(32, 32), mode="bilinear", align_corners=False
         )
 
         x = x.permute(0, 2, 3, 1)  # (B, 16, 16, 16 type)
@@ -188,7 +188,7 @@ def main():
 
     model.train()
     sample_batch = None
-    for epoch in range(20):
+    for epoch in range(50):
         cstep = 0
         for images, targets in loader:
             images = images.to(device, non_blocking=True)
@@ -199,31 +199,35 @@ def main():
             objects2 = targets[:,:,:, 9] == 1
             noobjects2 = targets[:,:,:, 9] != 1
             boxloss = torch.tensor([0], dtype=torch.float32).to(device, non_blocking=True)
-            noobj_loss = torch.tensor([0], dtype=torch.float32).to(device, non_blocking=True)
+            noboxloss = torch.tensor([0], dtype=torch.float32).to(device, non_blocking=True)
+            boxobjectiveness = torch.tensor([0], dtype=torch.float32).to(device, non_blocking=True)
+            noboxnoobjectiveness = torch.tensor([0], dtype=torch.float32).to(device, non_blocking=True)
             if objects1.any():
-                boxloss =  Fn.mse_loss(torch.sigmoid(output[..., :2][objects1]), targets[..., :2][objects1])
+                boxloss +=  Fn.mse_loss(torch.sigmoid(output[..., :2][objects1]), targets[..., :2][objects1])
                 boxloss +=  Fn.mse_loss(torch.sigmoid(output[..., 2:4][objects1]), targets[..., 2:4][objects1])
+                boxobjectiveness += Fn.binary_cross_entropy_with_logits(output[..., 4][objects1], targets[..., 4][objects1])
             if noobjects1.any():
-                noobj_loss = Fn.mse_loss(torch.sigmoid(output[..., :2][noobjects1]), torch.zeros_like(output[..., :2][noobjects1]))
-                noobj_loss += Fn.mse_loss(torch.sigmoid(output[..., 2:4][noobjects1]), torch.zeros_like(output[..., 2:4][noobjects1]))
+                noboxloss += Fn.mse_loss(torch.sigmoid(output[..., :2][noobjects1]), torch.zeros_like(output[..., :2][noobjects1]))
+                noboxloss += Fn.mse_loss(torch.sigmoid(output[..., 2:4][noobjects1]), torch.zeros_like(output[..., 2:4][noobjects1]))
+                noboxnoobjectiveness += Fn.binary_cross_entropy_with_logits(output[..., 4][noobjects1], targets[..., 4][noobjects1])
             if objects2.any():
-                boxloss =  Fn.mse_loss(torch.sigmoid(output[..., 5:7][objects2]), targets[..., 5:7][objects2])
+                boxloss +=  Fn.mse_loss(torch.sigmoid(output[..., 5:7][objects2]), targets[..., 5:7][objects2])
                 boxloss +=  Fn.mse_loss(torch.sigmoid(output[..., 7:9][objects2]), targets[..., 7:9][objects2])
+                boxobjectiveness += Fn.binary_cross_entropy_with_logits(output[..., 9][objects2], targets[..., 9][objects2])
             if noobjects2.any():
-                noobj_loss = Fn.mse_loss(torch.sigmoid(output[..., 5:7][noobjects2]), torch.zeros_like(output[..., 5:7][noobjects2]))
-                noobj_loss += Fn.mse_loss(torch.sigmoid(output[..., 7:9][noobjects2]), torch.zeros_like(output[..., 7:9][noobjects2]))
-            objloss = Fn.binary_cross_entropy_with_logits(output[..., 4], targets[..., 4])
-            objloss += Fn.binary_cross_entropy_with_logits(output[..., 9], targets[..., 9])
+                noboxloss += Fn.mse_loss(torch.sigmoid(output[..., 5:7][noobjects2]), torch.zeros_like(output[..., 5:7][noobjects2]))
+                noboxloss += Fn.mse_loss(torch.sigmoid(output[..., 7:9][noobjects2]), torch.zeros_like(output[..., 7:9][noobjects2]))
+                noboxnoobjectiveness += Fn.binary_cross_entropy_with_logits(output[..., 9][noobjects2], targets[..., 9][noobjects2])
             class_loss = Fn.cross_entropy(output[..., 10:16], targets[..., 10:16])
-            loss = 10*boxloss+objloss+0.2*noobj_loss+class_loss
+            loss = 20*boxloss+0.02*noboxloss+1*boxobjectiveness+2*noboxnoobjectiveness+0.7*class_loss
             optimizer.zero_grad()
             loss.backward()
             optimizer.step()
             cstep += 1
             sample_batch = (images.detach().cpu(), output.detach().cpu())
             print(f"epoch: {epoch}, percent: {100*((cstep*49)/5794)}, loss: {loss.item()}")
-            if cstep % 100 == 0:
-                draw_boxes(get_boxes(sample_batch[1], sample_batch[0], cutoff=0.0), f"step {cstep}", text="cut off = 0.0")
+            if cstep % 55 == 0:
+                draw_boxes(get_boxes(sample_batch[1], sample_batch[0], cutoff=0.02), f"step {cstep}", text="cut off = 0.02")
                 sample_batch = None
         if sample_batch is not None:
             draw_boxes(get_boxes(sample_batch[1], sample_batch[0], cutoff=0.50), f"epoch {epoch+1}", text="cut off = 0.5")
