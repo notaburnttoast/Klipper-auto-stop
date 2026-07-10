@@ -79,8 +79,9 @@ def get_boxes(grids, images, cutoff, size=32):
     return imageboxes
 
 type_to_string = {0: "blobs", 1: "cracks", 2: "over_extrusion", 3: "spaghetti", 4: "stringing", 5: "under_extrusion"}
-
-def draw_boxes(grid, id, text):
+#             Orange              Cyan                Lime Green          Purple              Yellow             Pink
+colors = {0: (1.0, 0.5, 0.2), 1: (0.2, 0.8, 1.0), 2: (0.6, 1.0, 0.3), 3: (0.9, 0.3, 1.0), 4: (1.0, 0.9, 0.2), 5: (1.0, 0.2, 0.5)}
+def draw_boxes(grid, id, text, path):
     print(f"draw_boxes called with {len(grid)} images, id={id}, text={text}")
     width = math.ceil(math.sqrt(len(grid)))
     height = math.ceil(len(grid) / width)
@@ -102,7 +103,7 @@ def draw_boxes(grid, id, text):
             if W != 0 and H != 0:
                 x1 = (Cx - W/2) * w
                 y1 = (Cy - H/2) * h
-                rect = Rectangle((x1, y1), W * w, H * h, linewidth=2, edgecolor='r', facecolor='none')
+                rect = Rectangle((x1, y1), W * w, H * h, linewidth=2, edgecolor=(colors[type_id], (c-0.5)*2), facecolor='none')
                 axs[y][x].add_patch(rect)
                 image_box_count += 1
                 box_count += 1
@@ -110,7 +111,7 @@ def draw_boxes(grid, id, text):
             if W2 != 0 and H2 != 0:
                 x3 = (Cx2 - W2/2) * w
                 y3 = (Cy2 - H2/2) * h
-                rect2 = Rectangle((x3, y3), W2 * w, H2 * h, linewidth=2, edgecolor='b', facecolor='none')
+                rect2 = Rectangle((x3, y3), W2 * w, H2 * h, linewidth=2, edgecolor=(colors[type_id], (c2-0.5)*2), facecolor='none')
                 axs[y][x].add_patch(rect2)
                 image_box_count += 1
                 box_count += 1
@@ -129,8 +130,8 @@ def draw_boxes(grid, id, text):
         axs[y_idx][x_idx].axis('off')
     print(f"Total boxes drawn: {box_count}")
     fig.suptitle(f'Prediction {text}')
-    plt.savefig(f"predictions/prediction {id}.png", dpi=100, bbox_inches='tight')
-    print(f"Saved: predictions/prediction {id}.png")
+    plt.savefig(f"{path}/prediction {id}.png", dpi=100, bbox_inches='tight')
+    print(f"Saved: {path}/prediction {id}.png")
     plt.close()
 
 
@@ -200,12 +201,10 @@ def main():
             info = input("Log data iteration: ")
             Save_log_path = r"Model saves/data log/" + f"L{layersize} + {info}"
         if Testing:
-            info = input("Model info: ")
-            Save_model_path = Path(r"Model saves/testing/" + f"L{layersize} {info}")
+            Save_model_path = Path(r"Model saves/testing/" + "current")
         else:
             Save_model_path = Path(r"Model saves/Science fair/Model saves" + f"L{layersize}")
-
-        Save_model_path.mkdir(parents=False, exist_ok=True)
+        (Save_model_path / "images").mkdir(parents=True, exist_ok=True)
 
     prevloss = []
     model.train()
@@ -241,36 +240,42 @@ def main():
                 noboxloss += Fn.mse_loss(torch.sigmoid(output[..., 7:9][noobjects2]), torch.zeros_like(output[..., 7:9][noobjects2]))
                 noboxnoobjectiveness += Fn.binary_cross_entropy_with_logits(output[..., 9][noobjects2], targets[..., 9][noobjects2])
             class_loss = Fn.cross_entropy(output[..., 10:16], targets[..., 10:16])
-            loss = 10*boxloss+0.02*noboxloss+1*boxobjectiveness+2*noboxnoobjectiveness+0.7*class_loss
+            loss = 20*boxloss+0.02*noboxloss+1*boxobjectiveness+2*noboxnoobjectiveness+0.7*class_loss
+            sample_batch = (images.detach().cpu(), output.detach().cpu())
+            optimizer.zero_grad()
+            loss.backward()
+            optimizer.step()
+            cstep += 1
+
+            model_state = {
+                "model state": model.state_dict(),
+                "loss state": loss,
+                "optimizer state": optimizer.state_dict(),
+                "step state": cstep
+            }
+
             if Save_model:
-                if min(prevloss) > loss:
-                    if Testing:
-                        torch.save(model.state_dict(), r"Model saves/testing/" + f"L{layersize} {info}" + r"/best.pt")
-                    else:
-                        torch.save(model.state_dict(), r"Model saves/Science fair/Model saves/" + f"L{layersize}" + r"/best.pt")
+                if prevloss != []:
+                    if min(prevloss) > loss.detach().cpu().item():
+                        if Testing:
+                            torch.save(model_state, r"Model saves/testing/" + "current" + r"/best.pt")
+                        else:
+                            torch.save(model_state, r"Model saves/Science fair/Model saves/" + f"L{layersize}" + r"/best.pt")
                 prevloss.append(loss.detach().cpu())
                 if len(prevloss) >= 10:
                     prevloss.pop(0)
                 if Testing:
-                    torch.save(model.state_dict(), r"Model saves/testing/" + f"L{layersize} {info}" + r"/last.pt")
+                    torch.save(model_state, r"Model saves/testing/" + "current" + r"/last.pt")
                 else:
-                    torch.save(model.state_dict(), r"Model saves/Science fair/Model saves/" + f"L{layersize}" + r"/last.pt")
+                    torch.save(model_state, r"Model saves/Science fair/Model saves/" + f"L{layersize}" + r"/last.pt")
             epoch_data.append(epoch+((cstep*49)/5794))
             loss_data.append(loss)
             if Log_data:
                 with open(Save_log_path, "w") as file:
                     file.write(str([epoch_data, loss_data]))
-            optimizer.zero_grad()
-            loss.backward()
-            optimizer.step()
-            cstep += 1
-            sample_batch = (images.detach().cpu(), output.detach().cpu())
             print(f"epoch: {epoch}, percent: {100*((cstep*49)/5794)}, loss: {loss.item()}")
-            if cstep % 55 == 0:
-                draw_boxes(get_boxes(sample_batch[1], sample_batch[0], cutoff=0.2), f"step {cstep}", text="cut off = 0.2")
-                sample_batch = None
         if sample_batch is not None:
-            draw_boxes(get_boxes(sample_batch[1], sample_batch[0], cutoff=0.70), f"epoch {epoch+1}", text="cut off = 0.7")
+            draw_boxes(get_boxes(sample_batch[1], sample_batch[0], cutoff=0.50), f"epoch {epoch+1}", text="cut off = 0.5", path=str(Save_model_path / "images"))
             sample_batch = None
 
 if __name__ == "__main__":
