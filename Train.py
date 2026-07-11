@@ -21,9 +21,8 @@ print(f"Using device: {device}")
 torch.backends.cudnn.benchmark = True
 
 class CustomDataset(Dataset):
-    def __init__(self, root, only_label=None):
+    def __init__(self, root):
         self.root = root
-        self.only_label = only_label
         with open(r"yolo dataset/missed images.txt", "r", encoding="utf-8") as file:
             data = eval(file.read())
         self.length, self.missing = data
@@ -136,13 +135,18 @@ def draw_boxes(grid, id, text, path):
 
 
 class Model(nn.Module):
-    def __init__(self, layers=3, startchannels=32):
+    def __init__(self, layers=3, numberofconv2d=3, startchannels=32):
         super().__init__()
+        conv2perlayer = numberofconv2d/layers
+        numofconv2 = [math.floor(conv2perlayer)+1 if (conv2perlayer-math.floor(conv2perlayer))*layers > (layers-i) else math.floor(conv2perlayer) for i in range(1, layers+1)]
+        print(numofconv2)
         conv2layers = []
         inchannels = 3
         for i in range(layers):
             outchannels = startchannels * (2**i)
             conv2layers.append(nn.Conv2d(inchannels, outchannels, 3, padding=1))
+            for _ in range(numofconv2[i]-1):
+                conv2layers.append(nn.Conv2d(outchannels, outchannels, 3, padding=1))
             conv2layers.append(nn.ReLU())
             conv2layers.append(nn.MaxPool2d(2))
             inchannels=outchannels
@@ -165,8 +169,7 @@ def main():
         data = file.read()
 
     DATA_PATH = data
-    # blob_dataset = CustomDataset(DATA_PATH, only_label=0)
-    dataset = CustomDataset(DATA_PATH, only_label=None)
+    dataset = CustomDataset(DATA_PATH)
 
 
     loader = DataLoader(
@@ -180,7 +183,7 @@ def main():
         drop_last=True
     )
     layersize = 4
-    model = Model(layers=layersize).to(device)
+    model = Model(layers=layersize, numberofconv2d=layersize+2).to(device)
 
     optimizer = torch.optim.Adam(
         model.parameters(),
@@ -240,39 +243,36 @@ def main():
                 noboxloss += Fn.mse_loss(torch.sigmoid(output[..., 7:9][noobjects2]), torch.zeros_like(output[..., 7:9][noobjects2]))
                 noboxnoobjectiveness += Fn.binary_cross_entropy_with_logits(output[..., 9][noobjects2], targets[..., 9][noobjects2])
             class_loss = Fn.cross_entropy(output[..., 10:16], targets[..., 10:16])
-            loss = 20*boxloss+0.02*noboxloss+1*boxobjectiveness+2*noboxnoobjectiveness+0.7*class_loss
+            loss = 10*boxloss+0.02*noboxloss+2*boxobjectiveness+1*noboxnoobjectiveness+10*class_loss
+
             sample_batch = (images.detach().cpu(), output.detach().cpu())
             optimizer.zero_grad()
             loss.backward()
             optimizer.step()
             cstep += 1
-
-            model_state = {
-                "model state": model.state_dict(),
-                "loss state": loss,
-                "optimizer state": optimizer.state_dict(),
-                "step state": cstep
-            }
-
             if Save_model:
                 if prevloss != []:
                     if min(prevloss) > loss.detach().cpu().item():
+                        model_state = {"model state": model.state_dict(),"loss state": loss,"optimizer state": optimizer.state_dict(),"step state": cstep}
                         if Testing:
                             torch.save(model_state, r"Model saves/testing/" + "current" + r"/best.pt")
                         else:
                             torch.save(model_state, r"Model saves/Science fair/Model saves/" + f"L{layersize}" + r"/best.pt")
                 prevloss.append(loss.detach().cpu())
-                if len(prevloss) >= 10:
+                if len(prevloss) >= 20:
                     prevloss.pop(0)
-                if Testing:
-                    torch.save(model_state, r"Model saves/testing/" + "current" + r"/last.pt")
-                else:
-                    torch.save(model_state, r"Model saves/Science fair/Model saves/" + f"L{layersize}" + r"/last.pt")
+                if cstep % 10 == 0:
+                    model_state = {"model state": model.state_dict(),"loss state": loss,"optimizer state": optimizer.state_dict(),"step state": cstep}
+                    if Testing:
+                        torch.save(model_state, r"Model saves/testing/" + "current" + r"/last.pt")
+                    else:
+                        torch.save(model_state, r"Model saves/Science fair/Model saves/" + f"L{layersize}" + r"/last.pt")
             epoch_data.append(epoch+((cstep*49)/5794))
             loss_data.append(loss)
             if Log_data:
                 with open(Save_log_path, "w") as file:
                     file.write(str([epoch_data, loss_data]))
+
             print(f"epoch: {epoch}, percent: {100*((cstep*49)/5794)}, loss: {loss.item()}")
         if sample_batch is not None:
             draw_boxes(get_boxes(sample_batch[1], sample_batch[0], cutoff=0.50), f"epoch {epoch+1}", text="cut off = 0.5", path=str(Save_model_path / "images"))

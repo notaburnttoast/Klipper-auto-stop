@@ -4,8 +4,10 @@ Model saves will each be in a folder with a name of model layer size. In the fol
 ### L2
 - best.pt
 - last.pt
-- prediction.png
+- images
+- - prediction epoch num.png
 ### L3
 - best.pt
 - last.pt
-- prediction.png
+- images
+- - prediction epoch num.png
