@@ -139,13 +139,13 @@ class Model(nn.Module):
         super().__init__()
         conv2perlayer = numberofconv2d/layers
         numofconv2 = [math.floor(conv2perlayer)+1 if (conv2perlayer-math.floor(conv2perlayer))*layers > (layers-i) else math.floor(conv2perlayer) for i in range(1, layers+1)]
-        print(numofconv2)
         conv2layers = []
         inchannels = 3
         for i in range(layers):
             outchannels = startchannels * (2**i)
             conv2layers.append(nn.Conv2d(inchannels, outchannels, 3, padding=1))
             for _ in range(numofconv2[i]-1):
+                conv2layers.append(nn.ReLU())
                 conv2layers.append(nn.Conv2d(outchannels, outchannels, 3, padding=1))
             conv2layers.append(nn.ReLU())
             conv2layers.append(nn.MaxPool2d(2))
@@ -182,8 +182,9 @@ def main():
         prefetch_factor=2,
         drop_last=True
     )
-    layersize = 4
-    model = Model(layers=layersize, numberofconv2d=layersize+2).to(device)
+    layersize = 2
+    numofcov2d = 4
+    model = Model(layers=layersize, numberofconv2d=numofcov2d).to(device)
 
     optimizer = torch.optim.Adam(
         model.parameters(),
@@ -191,8 +192,8 @@ def main():
     )
 
     Save_model = True
-    Testing = True
-    Log_data = False
+    Testing = False
+    Log_data = True
 
     Save_model_path = Path(r"Model saves/testing")
     info = ""
@@ -202,17 +203,17 @@ def main():
     if Save_model:
         if Log_data:
             info = input("Log data iteration: ")
-            Save_log_path = r"Model saves/data log/" + f"L{layersize} + {info}"
+            Save_log_path = r"Model saves/Science fair/data log/" + f"L{layersize} N{numofcov2d} {info}.dat"
         if Testing:
             Save_model_path = Path(r"Model saves/testing/" + "current")
         else:
-            Save_model_path = Path(r"Model saves/Science fair/Model saves" + f"L{layersize}")
+            Save_model_path = Path(r"Model saves/Science fair/Model saves/" + f"L{layersize} N{numofcov2d}")
         (Save_model_path / "images").mkdir(parents=True, exist_ok=True)
 
     prevloss = []
     model.train()
     sample_batch = None
-    for epoch in range(50):
+    for epoch in range(20):
         cstep = 0
         for images, targets in loader:
             images = images.to(device, non_blocking=True)
@@ -253,30 +254,30 @@ def main():
             if Save_model:
                 if prevloss != []:
                     if min(prevloss) > loss.detach().cpu().item():
-                        model_state = {"model state": model.state_dict(),"loss state": loss,"optimizer state": optimizer.state_dict(),"step state": cstep}
+                        model_state = {"model state": model.state_dict(),"loss state": loss,"optimizer state": optimizer.state_dict(),"step state": cstep, "epoch state": epoch}
                         if Testing:
                             torch.save(model_state, r"Model saves/testing/" + "current" + r"/best.pt")
                         else:
-                            torch.save(model_state, r"Model saves/Science fair/Model saves/" + f"L{layersize}" + r"/best.pt")
+                            torch.save(model_state, str(Save_model_path / r"best.pt"))
                 prevloss.append(loss.detach().cpu())
                 if len(prevloss) >= 20:
                     prevloss.pop(0)
                 if cstep % 10 == 0:
-                    model_state = {"model state": model.state_dict(),"loss state": loss,"optimizer state": optimizer.state_dict(),"step state": cstep}
+                    model_state = {"model state": model.state_dict(),"loss state": loss,"optimizer state": optimizer.state_dict(),"step state": cstep, "epoch state": epoch}
                     if Testing:
                         torch.save(model_state, r"Model saves/testing/" + "current" + r"/last.pt")
                     else:
-                        torch.save(model_state, r"Model saves/Science fair/Model saves/" + f"L{layersize}" + r"/last.pt")
+                        torch.save(model_state, str(Save_model_path / r"last.pt"))
             epoch_data.append(epoch+((cstep*49)/5794))
-            loss_data.append(loss)
-            if Log_data:
-                with open(Save_log_path, "w") as file:
-                    file.write(str([epoch_data, loss_data]))
-
+            loss_data.append(loss.detach().cpu().item())
             print(f"epoch: {epoch}, percent: {100*((cstep*49)/5794)}, loss: {loss.item()}")
         if sample_batch is not None:
             draw_boxes(get_boxes(sample_batch[1], sample_batch[0], cutoff=0.50), f"epoch {epoch+1}", text="cut off = 0.5", path=str(Save_model_path / "images"))
             sample_batch = None
+        if Log_data:
+            with open(Save_log_path, "w") as file:
+                file.write(str([epoch_data, loss_data]))
+
 
 if __name__ == "__main__":
     main()
