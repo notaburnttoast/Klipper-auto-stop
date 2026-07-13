@@ -102,7 +102,7 @@ def draw_boxes(grid, id, text, path):
             if W != 0 and H != 0:
                 x1 = (Cx - W/2) * w
                 y1 = (Cy - H/2) * h
-                rect = Rectangle((x1, y1), W * w, H * h, linewidth=2, edgecolor=(colors[type_id], (c-0.5)*2), facecolor='none')
+                rect = Rectangle((x1, y1), W * w, H * h, linewidth=2, edgecolor=(colors[type_id], (c-0.8)*5), facecolor='none')
                 axs[y][x].add_patch(rect)
                 image_box_count += 1
                 box_count += 1
@@ -110,7 +110,7 @@ def draw_boxes(grid, id, text, path):
             if W2 != 0 and H2 != 0:
                 x3 = (Cx2 - W2/2) * w
                 y3 = (Cy2 - H2/2) * h
-                rect2 = Rectangle((x3, y3), W2 * w, H2 * h, linewidth=2, edgecolor=(colors[type_id], (c2-0.5)*2), facecolor='none')
+                rect2 = Rectangle((x3, y3), W2 * w, H2 * h, linewidth=2, edgecolor=(colors[type_id], (c2-0.8)*5), facecolor='none')
                 axs[y][x].add_patch(rect2)
                 image_box_count += 1
                 box_count += 1
@@ -272,7 +272,7 @@ def main():
             loss_data.append(loss.detach().cpu().item())
             print(f"epoch: {epoch}, percent: {100*((cstep*49)/5794)}, loss: {loss.item()}")
         if sample_batch is not None:
-            draw_boxes(get_boxes(sample_batch[1], sample_batch[0], cutoff=0.50), f"epoch {epoch+1}", text="cut off = 0.5", path=str(Save_model_path / "images"))
+            draw_boxes(get_boxes(sample_batch[1], sample_batch[0], cutoff=0.80), f"epoch {epoch+1}", text="cut off = 0.8", path=str(Save_model_path / "images"))
             sample_batch = None
         if Log_data:
             with open(Save_log_path, "w") as file:
