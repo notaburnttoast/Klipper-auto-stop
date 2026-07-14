@@ -30,19 +30,24 @@ for i in range(layer,number_of_conv2d+layer):
     ny = [float(i) for _ in range(len(newx))]
     x.append(newx)
     y.append(ny)
-    z.append(savgol_filter(newz, window_length=75, polyorder=1))
+    for _ in range(0):
+        newz = savgol_filter(newz, window_length=75, polyorder=1)
+    z.append(newz)
 
 X = np.array(x)
 Y = np.array(y)
 Z = np.array(z)
 
-ax.set_zbound(lower=4, upper=10)
+ax.set_zlim(zmin=3, zmax=10)
+ax.set_ylim(ymin=2,ymax=4)
+ax.set_xlim(xmin=0,xmax=20)
 surf = ax.plot_surface(X, Y, Z, cmap='magma', edgecolor='none', rstride=1, cstride=1)
-cbar = fig.colorbar(surf)
+cbar = fig.colorbar(surf, pad=0.20)
 cbar.set_ticks([4,5,6,7,8,9,10])
-ax.set_title("Loss for different number of Conv2d in model with a layer of 2")
+ax.set_title("Loss for different number of Conv2d with 2 model layers")
 ax.set_xlabel("Epoch")
 ax.set_ylabel("Conv2d")
 ax.set_zlabel("Loss")
 
-plt.savefig(r"Model saves\Science fair\graphs\current.png")
+plt.savefig(r"Model saves\Science fair\graphs\current.png", dpi=600)
+#plt.show()
