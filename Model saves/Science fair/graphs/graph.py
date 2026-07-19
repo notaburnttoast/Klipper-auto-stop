@@ -30,7 +30,7 @@ for i in range(layer,number_of_conv2d+layer):
     ny = [float(i) for _ in range(len(newx))]
     x.append(newx)
     y.append(ny)
-    for _ in range(0):
+    for _ in range(100):
         newz = savgol_filter(newz, window_length=75, polyorder=1)
     z.append(newz)
 
