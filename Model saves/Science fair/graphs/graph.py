@@ -3,9 +3,9 @@ import ast
 import numpy as np
 from scipy.signal import savgol_filter
 
-layer = 2
-number_of_conv2d = 3
-number_of_iterations = [3,3,3]
+layer = 4
+number_of_conv2d = 5
+number_of_iterations = [3,3,3,3,3]
 
 fig = plt.figure()
 ax = fig.add_subplot(projection='3d')
@@ -30,7 +30,7 @@ for i in range(layer,number_of_conv2d+layer):
     ny = [float(i) for _ in range(len(newx))]
     x.append(newx)
     y.append(ny)
-    for _ in range(100):
+    for _ in range(0):
         newz = savgol_filter(newz, window_length=75, polyorder=1)
     z.append(newz)
 
@@ -38,16 +38,16 @@ X = np.array(x)
 Y = np.array(y)
 Z = np.array(z)
 
-ax.set_zlim(zmin=3, zmax=10)
-ax.set_ylim(ymin=2,ymax=4)
+ax.set_zlim(zmin=2, zmax=10)
+ax.set_ylim(ymin=layer,ymax=layer+number_of_conv2d-1)
 ax.set_xlim(xmin=0,xmax=20)
 surf = ax.plot_surface(X, Y, Z, cmap='magma', edgecolor='none', rstride=1, cstride=1)
 cbar = fig.colorbar(surf, pad=0.20)
-cbar.set_ticks([4,5,6,7,8,9,10])
-ax.set_title("Loss for different number of Conv2d with 2 model layers")
+cbar.set_ticks([2,3,4,5,6,7,8,9,10])
+ax.set_title("Loss for different number of Conv2d with 4 model layers")
 ax.set_xlabel("Epoch")
 ax.set_ylabel("Conv2d")
 ax.set_zlabel("Loss")
 
 plt.savefig(r"Model saves\Science fair\graphs\current.png", dpi=600)
-#plt.show()
+plt.show()

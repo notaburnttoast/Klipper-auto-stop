@@ -129,7 +129,7 @@ def draw_boxes(grid, id, text, path):
         axs[y_idx][x_idx].axis('off')
     print(f"Total boxes drawn: {box_count}")
     fig.suptitle(f'Prediction {text}')
-    plt.savefig(f"{path}/prediction {id}.png", dpi=100, bbox_inches='tight')
+    plt.savefig(f"{path}/prediction {id}.png", dpi=300, bbox_inches='tight')
     print(f"Saved: {path}/prediction {id}.png")
     plt.close()
 
@@ -182,8 +182,8 @@ def main():
         prefetch_factor=2,
         drop_last=True
     )
-    layersize = 2
-    numofcov2d = 4
+    layersize = 4
+    numofcov2d = 8
     model = Model(layers=layersize, numberofconv2d=numofcov2d).to(device)
 
     optimizer = torch.optim.Adam(
